@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,8 +20,8 @@ import {
   AlertTriangle,
   FileJson,
   Target,
-  Eraser,
-  RefreshCcw
+  RefreshCcw,
+  PlusCircle
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
@@ -51,14 +51,14 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load history on mount
-  useState(() => {
+  useEffect(() => {
     if (typeof window !== "undefined") {
       const savedHistory = localStorage.getItem(`uees_history_${studentName}`);
       if (savedHistory) {
         setHistory(JSON.parse(savedHistory));
       }
     }
-  });
+  }, [studentName]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -72,15 +72,17 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
     }
   };
 
-  const clearInstruction = () => {
+  const startNewAttempt = () => {
+    setCurrentResult(null);
     setSystemInstruction("");
+    // Reset file if needed, but usually testing same file with different prompt
+    // setFileContent(null);
+    // setFileName(null);
   };
 
   const runEvaluation = async () => {
     if (!systemInstruction.trim() || !fileContent) return;
     
-    // CRITICAL: Clear previous results to ensure the agent receives a fresh context
-    // and the user doesn't see stale data while processing.
     setCurrentResult(null);
     setIsProcessing(true);
 
@@ -155,30 +157,22 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Configuration */}
         <div className="lg:col-span-1 space-y-6">
-          <Card className="shadow-md border-t-4 border-t-primary">
-            <CardHeader className="flex flex-row items-center justify-between">
+          <Card className="shadow-md border-t-4 border-t-primary overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between bg-muted/30">
               <div>
                 <CardTitle className="flex items-center gap-2 text-primary text-lg">
                   <Code size={20} /> 1. System Instruction
                 </CardTitle>
                 <CardDescription>Define el comportamiento de la IA.</CardDescription>
               </div>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={clearInstruction} 
-                title="Limpiar instrucción"
-                className="text-muted-foreground hover:text-destructive"
-              >
-                <Eraser size={18} />
-              </Button>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-6">
               <Textarea 
                 placeholder="Ingresa la instrucción de sistema aquí..."
                 className="min-h-[220px] font-code text-sm border-2 focus-visible:ring-primary leading-relaxed"
                 value={systemInstruction}
                 onChange={(e) => setSystemInstruction(e.target.value)}
+                disabled={currentResult !== null || isProcessing}
               />
               <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
                 <p className="text-[11px] text-blue-700 leading-tight">
@@ -198,8 +192,8 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
             </CardHeader>
             <CardContent className="space-y-4">
               <div 
-                className={`border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer hover:bg-muted/50 group ${fileName ? 'border-accent bg-accent/5' : 'border-muted-foreground/20'}`}
-                onClick={() => fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer hover:bg-muted/50 group ${(fileName || currentResult) ? 'border-accent bg-accent/5' : 'border-muted-foreground/20'} ${(currentResult || isProcessing) ? 'pointer-events-none opacity-60' : ''}`}
+                onClick={() => !currentResult && !isProcessing && fileInputRef.current?.click()}
               >
                 <input 
                   type="file" 
@@ -212,7 +206,7 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                   <div className="space-y-2">
                     <FileText className="mx-auto text-accent" size={32} />
                     <p className="font-bold text-xs truncate max-w-[150px] mx-auto">{fileName}</p>
-                    <Badge variant="secondary" className="text-[10px]">Cargado con éxito</Badge>
+                    <Badge variant="secondary" className="text-[10px]">Cargado</Badge>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -222,22 +216,35 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                 )}
               </div>
               
-              <Button 
-                className="w-full bg-primary hover:bg-primary/90 text-white font-bold h-14 text-lg shadow-lg group"
-                disabled={!systemInstruction.trim() || !fileContent || isProcessing}
-                onClick={runEvaluation}
-              >
-                {isProcessing ? (
-                  <span className="flex items-center gap-2">
-                    <RefreshCcw className="animate-spin" size={20} /> Procesando...
-                  </span>
+              <div className="space-y-3">
+                {currentResult === null ? (
+                  <Button 
+                    className="w-full bg-primary hover:bg-primary/90 text-white font-bold h-14 text-lg shadow-lg group"
+                    disabled={!systemInstruction.trim() || !fileContent || isProcessing}
+                    onClick={runEvaluation}
+                  >
+                    {isProcessing ? (
+                      <span className="flex items-center gap-2">
+                        <RefreshCcw className="animate-spin" size={20} /> Procesando...
+                      </span>
+                    ) : (
+                      <>
+                        Ejecutar Evaluación
+                        <Play className="ml-2 group-hover:translate-x-1 transition-transform" size={20} />
+                      </>
+                    )}
+                  </Button>
                 ) : (
-                  <>
-                    Ejecutar Evaluación
-                    <Play className="ml-2 group-hover:translate-x-1 transition-transform" size={20} />
-                  </>
+                  <Button 
+                    variant="outline"
+                    className="w-full border-2 border-primary text-primary hover:bg-primary hover:text-white font-black h-14 text-lg shadow-lg animate-bounce"
+                    onClick={startNewAttempt}
+                  >
+                    <PlusCircle className="mr-2" size={20} />
+                    NUEVO INTENTO
+                  </Button>
                 )}
-              </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -250,7 +257,7 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                 <AlertTriangle size={64} className="opacity-10" />
               </div>
               <p className="text-xl font-medium">Esperando configuración...</p>
-              <p className="text-sm opacity-60">Define tu prompt y sube los datos para iniciar.</p>
+              <p className="text-sm opacity-60 text-center max-w-[300px]">Define tu instrucción de sistema y carga los datos para comenzar la prueba.</p>
             </div>
           ) : isProcessing ? (
             <Card className="shadow-xl h-full min-h-[500px] flex items-center justify-center border-none bg-white/80 backdrop-blur-md">
@@ -261,7 +268,7 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                 </div>
                 <div>
                   <h3 className="text-2xl font-bold text-primary animate-pulse">Analizando</h3>
-                  <p className="text-muted-foreground text-sm">El agente de IA está procesando tu instrucción...</p>
+                  <p className="text-muted-foreground text-sm">El agente de IA está procesando tu instrucción de forma aislada...</p>
                 </div>
               </div>
             </Card>
@@ -286,13 +293,13 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                         {score === totalItems ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
                         {percentage.toFixed(0)}% Éxito
                       </div>
-                      <p className="text-xs font-medium text-primary-foreground/60 italic">Instrucción validada correctamente</p>
+                      <p className="text-xs font-medium text-primary-foreground/60 italic">Instrucción completada</p>
                     </div>
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
-                      <span>Progreso de Validación</span>
-                      <span>{score} aciertos de {totalItems}</span>
+                      <span>Eficacia del Prompt</span>
+                      <span>{score} correctos de {totalItems}</span>
                     </div>
                     <Progress value={percentage} className="h-4 bg-white/10" />
                   </div>
@@ -413,7 +420,14 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
           ) : (
             <div className="space-y-3">
               {history.map((record) => (
-                <div key={record.id} className="flex items-center justify-between p-5 bg-white border rounded-2xl hover:border-primary transition-all hover:shadow-lg group cursor-pointer" onClick={() => setCurrentResult(record.results)}>
+                <div 
+                  key={record.id} 
+                  className="flex items-center justify-between p-5 bg-white border rounded-2xl hover:border-primary transition-all hover:shadow-lg group cursor-pointer" 
+                  onClick={() => {
+                    setCurrentResult(record.results);
+                    setSystemInstruction(record.systemInstruction);
+                  }}
+                >
                   <div className="flex items-center gap-5">
                     <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-lg ${record.score === record.total ? 'bg-accent/20 text-accent' : 'bg-primary/10 text-primary'}`}>
                       {record.score}/{record.total}
