@@ -19,15 +19,12 @@ import {
   ShieldCheck,
   AlertTriangle,
   FileJson,
-  Target
+  Target,
+  Eraser,
+  RefreshCcw
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-
-interface PromptEvaluationDashboardProps {
-  studentName: string;
-  onLogout: () => void;
-}
 
 interface EvaluationRecord {
   id: string;
@@ -36,6 +33,11 @@ interface EvaluationRecord {
   score: number;
   total: number;
   results: ExtractAndValidateFeedbackOutput;
+}
+
+interface PromptEvaluationDashboardProps {
+  studentName: string;
+  onLogout: () => void;
 }
 
 export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvaluationDashboardProps) {
@@ -70,13 +72,21 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
     }
   };
 
+  const clearInstruction = () => {
+    setSystemInstruction("");
+  };
+
   const runEvaluation = async () => {
-    if (!systemInstruction || !fileContent) return;
+    if (!systemInstruction.trim() || !fileContent) return;
     
+    // CRITICAL: Clear previous results to ensure the agent receives a fresh context
+    // and the user doesn't see stale data while processing.
+    setCurrentResult(null);
     setIsProcessing(true);
+
     try {
       const output = await extractAndValidateFeedback({
-        systemInstruction,
+        systemInstruction: systemInstruction.trim(),
         textContent: fileContent,
       });
 
@@ -88,7 +98,7 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
       const record: EvaluationRecord = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
-        systemInstruction,
+        systemInstruction: systemInstruction.trim(),
         score,
         total,
         results: output,
@@ -145,36 +155,50 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Configuration */}
         <div className="lg:col-span-1 space-y-6">
-          <Card className="shadow-md">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-primary">
-                <Code size={20} /> 1. System Instruction
-              </CardTitle>
-              <CardDescription>Define cómo debe comportarse el agente de IA.</CardDescription>
+          <Card className="shadow-md border-t-4 border-t-primary">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-primary text-lg">
+                  <Code size={20} /> 1. System Instruction
+                </CardTitle>
+                <CardDescription>Define el comportamiento de la IA.</CardDescription>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={clearInstruction} 
+                title="Limpiar instrucción"
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <Eraser size={18} />
+              </Button>
             </CardHeader>
             <CardContent className="space-y-4">
               <Textarea 
                 placeholder="Ingresa la instrucción de sistema aquí..."
-                className="min-h-[200px] font-code text-sm border-2 focus-visible:ring-primary"
+                className="min-h-[220px] font-code text-sm border-2 focus-visible:ring-primary leading-relaxed"
                 value={systemInstruction}
                 onChange={(e) => setSystemInstruction(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground italic">
-                * El agente debe extraer: entidad, polaridad (Amor/Odio), categoría y urgencia.
-              </p>
+              <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                <p className="text-[11px] text-blue-700 leading-tight">
+                  <strong className="block mb-1">Requisito de Extracción:</strong>
+                  Debe generar un JSON con: entidad, polaridad (Amor/Odio), categoría y urgencia.
+                </p>
+              </div>
             </CardContent>
           </Card>
 
           <Card className="shadow-md">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-primary">
-                <Upload size={20} /> 2. Carga de Datos (.txt)
+              <CardTitle className="flex items-center gap-2 text-primary text-lg">
+                <Upload size={20} /> 2. Casos de Prueba
               </CardTitle>
-              <CardDescription>Sube el archivo con los casos de prueba.</CardDescription>
+              <CardDescription>Archivo .txt con ejemplos.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div 
-                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer hover:bg-muted/50 ${fileName ? 'border-accent bg-accent/5' : 'border-muted-foreground/20'}`}
+                className={`border-2 border-dashed rounded-lg p-6 text-center transition-all cursor-pointer hover:bg-muted/50 group ${fileName ? 'border-accent bg-accent/5' : 'border-muted-foreground/20'}`}
                 onClick={() => fileInputRef.current?.click()}
               >
                 <input 
@@ -186,26 +210,33 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                 />
                 {fileName ? (
                   <div className="space-y-2">
-                    <FileText className="mx-auto text-accent" size={40} />
-                    <p className="font-medium text-sm truncate">{fileName}</p>
-                    <Button variant="ghost" size="sm" className="text-xs">Cambiar archivo</Button>
+                    <FileText className="mx-auto text-accent" size={32} />
+                    <p className="font-bold text-xs truncate max-w-[150px] mx-auto">{fileName}</p>
+                    <Badge variant="secondary" className="text-[10px]">Cargado con éxito</Badge>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <Upload className="mx-auto text-muted-foreground" size={40} />
-                    <p className="text-sm font-medium">Click para subir archivo .txt</p>
-                    <p className="text-xs text-muted-foreground">O arrastra y suelta aquí</p>
+                    <Upload className="mx-auto text-muted-foreground group-hover:scale-110 transition-transform" size={32} />
+                    <p className="text-xs font-bold uppercase tracking-tight">Seleccionar .txt</p>
                   </div>
                 )}
               </div>
               
               <Button 
-                className="w-full bg-primary hover:bg-primary/90 text-white font-bold h-12"
-                disabled={!systemInstruction || !fileContent || isProcessing}
+                className="w-full bg-primary hover:bg-primary/90 text-white font-bold h-14 text-lg shadow-lg group"
+                disabled={!systemInstruction.trim() || !fileContent || isProcessing}
                 onClick={runEvaluation}
               >
-                {isProcessing ? "Procesando con IA..." : "3. Iniciar Evaluación"}
-                {!isProcessing && <Play className="ml-2" size={18} />}
+                {isProcessing ? (
+                  <span className="flex items-center gap-2">
+                    <RefreshCcw className="animate-spin" size={20} /> Procesando...
+                  </span>
+                ) : (
+                  <>
+                    Ejecutar Evaluación
+                    <Play className="ml-2 group-hover:translate-x-1 transition-transform" size={20} />
+                  </>
+                )}
               </Button>
             </CardContent>
           </Card>
@@ -214,98 +245,120 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
         {/* Right Column: Results */}
         <div className="lg:col-span-2 space-y-6">
           {!currentResult && !isProcessing ? (
-            <div className="flex flex-col items-center justify-center h-full min-h-[400px] border-2 border-dashed rounded-2xl bg-white/50 text-muted-foreground">
-              <AlertTriangle size={48} className="mb-4 opacity-20" />
-              <p className="text-lg">Configura el prompt y sube un archivo para ver los resultados.</p>
+            <div className="flex flex-col items-center justify-center h-full min-h-[500px] border-2 border-dashed rounded-3xl bg-white/40 text-muted-foreground backdrop-blur-sm">
+              <div className="bg-muted/30 p-8 rounded-full mb-6">
+                <AlertTriangle size={64} className="opacity-10" />
+              </div>
+              <p className="text-xl font-medium">Esperando configuración...</p>
+              <p className="text-sm opacity-60">Define tu prompt y sube los datos para iniciar.</p>
             </div>
           ) : isProcessing ? (
-            <Card className="animate-pulse shadow-md h-full min-h-[400px] flex items-center justify-center">
-              <div className="text-center space-y-4">
-                <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
-                <p className="text-primary font-bold">El agente está analizando los datos...</p>
+            <Card className="shadow-xl h-full min-h-[500px] flex items-center justify-center border-none bg-white/80 backdrop-blur-md">
+              <div className="text-center space-y-6">
+                <div className="relative">
+                  <div className="w-24 h-24 border-4 border-primary/20 rounded-full mx-auto"></div>
+                  <div className="w-24 h-24 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto absolute inset-0"></div>
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-primary animate-pulse">Analizando</h3>
+                  <p className="text-muted-foreground text-sm">El agente de IA está procesando tu instrucción...</p>
+                </div>
               </div>
             </Card>
           ) : (
-            <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+            <div className="space-y-6 animate-in zoom-in-95 duration-300">
               {/* Score Summary */}
-              <Card className="bg-gradient-to-r from-primary to-primary/80 text-white shadow-xl overflow-hidden relative">
-                <div className="absolute right-0 top-0 h-full w-1/3 bg-white/10 -skew-x-12 transform translate-x-12" />
-                <CardContent className="pt-6 pb-6 relative">
-                  <div className="flex justify-between items-center mb-4">
-                    <div>
-                      <h3 className="text-lg font-medium text-white/80">Calificación Obtenida</h3>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-5xl font-bold">{score}</span>
-                        <span className="text-2xl text-white/60">/ {totalItems} pts</span>
+              <Card className="bg-gradient-to-br from-primary via-primary/90 to-primary/80 text-white shadow-2xl overflow-hidden border-none">
+                <CardContent className="pt-8 pb-8 relative">
+                  <div className="absolute top-0 right-0 p-4 opacity-10">
+                    <Target size={120} />
+                  </div>
+                  <div className="flex justify-between items-center mb-6">
+                    <div className="space-y-1">
+                      <p className="text-primary-foreground/70 font-bold uppercase tracking-widest text-xs">Resultado del Intento</p>
+                      <div className="flex items-baseline gap-3">
+                        <span className="text-7xl font-black">{score}</span>
+                        <span className="text-3xl text-primary-foreground/40 font-bold">/ {totalItems}</span>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="inline-flex items-center gap-2 bg-white/20 px-4 py-2 rounded-full mb-2">
-                        {score === totalItems ? <CheckCircle2 size={20} className="text-accent" /> : <AlertTriangle size={20} className="text-yellow-400" />}
-                        <span className="font-bold">{percentage.toFixed(0)}% Éxito</span>
+                    <div className="text-right flex flex-col items-end gap-3">
+                      <div className={`flex items-center gap-2 px-6 py-3 rounded-full font-black text-lg shadow-inner ${percentage === 100 ? 'bg-accent text-accent-foreground' : 'bg-white/20'}`}>
+                        {score === totalItems ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
+                        {percentage.toFixed(0)}% Éxito
                       </div>
+                      <p className="text-xs font-medium text-primary-foreground/60 italic">Instrucción validada correctamente</p>
                     </div>
                   </div>
-                  <Progress value={percentage} className="h-3 bg-white/20" />
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                      <span>Progreso de Validación</span>
+                      <span>{score} aciertos de {totalItems}</span>
+                    </div>
+                    <Progress value={percentage} className="h-4 bg-white/10" />
+                  </div>
                 </CardContent>
               </Card>
 
               {/* Detailed Tabs */}
               <Tabs defaultValue="formatted" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 h-12 bg-white border mb-4">
-                  <TabsTrigger value="formatted" className="text-sm font-bold data-[state=active]:bg-primary data-[state=active]:text-white">
-                    Vista de Evaluación
+                <TabsList className="grid w-full grid-cols-2 h-14 bg-white/50 backdrop-blur border-2 mb-6 p-1 rounded-xl">
+                  <TabsTrigger value="formatted" className="text-sm font-black uppercase tracking-tight data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg transition-all">
+                    Detalle de Casos
                   </TabsTrigger>
-                  <TabsTrigger value="raw" className="text-sm font-bold data-[state=active]:bg-primary data-[state=active]:text-white">
-                    Respuesta Cruda (JSON)
+                  <TabsTrigger value="raw" className="text-sm font-black uppercase tracking-tight data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg transition-all">
+                    Salida JSON IA
                   </TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="formatted" className="space-y-4">
                   {currentResult?.validatedResults.map((result, idx) => (
-                    <Card key={idx} className={`shadow-sm border-l-4 transition-all hover:shadow-md ${result.validationStatus === 'Success' ? 'border-l-accent' : 'border-l-destructive'}`}>
-                      <CardContent className="p-4">
+                    <Card key={idx} className={`shadow-md border-l-8 transition-all hover:scale-[1.01] ${result.validationStatus === 'Success' ? 'border-l-accent bg-accent/5' : 'border-l-destructive bg-destructive/5'}`}>
+                      <CardContent className="p-5">
                         <div className="flex justify-between items-start gap-4">
-                          <div className="space-y-2 flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Badge variant="outline" className="text-xs font-bold text-muted-foreground uppercase tracking-tighter">Caso {idx + 1}</Badge>
+                          <div className="space-y-3 flex-1">
+                            <div className="flex items-center gap-3">
+                              <Badge variant="secondary" className="px-3 py-1 font-black text-[10px]">CASO {idx + 1}</Badge>
                               {result.validationStatus === 'Success' ? (
-                                <span className="flex items-center gap-1 text-accent text-xs font-bold">
-                                  <CheckCircle2 size={12} /> EXITOSA
-                                </span>
+                                <Badge className="bg-accent text-accent-foreground font-black border-none gap-1">
+                                  <CheckCircle2 size={12} /> FORMATO VÁLIDO
+                                </Badge>
                               ) : (
-                                <span className="flex items-center gap-1 text-destructive text-xs font-bold">
-                                  <XCircle size={12} /> FALLO EN FORMATO
-                                </span>
+                                <Badge variant="destructive" className="font-black gap-1">
+                                  <XCircle size={12} /> ERROR DE ESTRUCTURA
+                                </Badge>
                               )}
                             </div>
-                            <p className="text-sm text-foreground italic bg-muted/30 p-2 rounded leading-relaxed">
-                              "{result.originalText}"
-                            </p>
+                            <div className="bg-white/60 p-4 rounded-xl border border-black/5">
+                              <p className="text-sm text-foreground/80 italic leading-relaxed">
+                                "{result.originalText}"
+                              </p>
+                            </div>
                           </div>
                         </div>
 
                         {result.parsedResult && (
-                          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            <div className="bg-secondary/30 p-2 rounded">
-                              <label className="text-[10px] text-muted-foreground block uppercase font-bold">Entidad</label>
-                              <span className="text-sm font-medium">{result.parsedResult.entidad}</span>
+                          <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3 animate-in fade-in slide-in-from-top-2">
+                            <div className="bg-white p-3 rounded-xl border shadow-sm">
+                              <label className="text-[9px] text-muted-foreground block uppercase font-black mb-1">Entidad</label>
+                              <span className="text-xs font-bold text-primary">{result.parsedResult.entidad}</span>
                             </div>
-                            <div className="bg-secondary/30 p-2 rounded">
-                              <label className="text-[10px] text-muted-foreground block uppercase font-bold">Polaridad</label>
-                              <Badge className={result.parsedResult.polaridad === 'Amor' ? 'bg-accent text-white' : 'bg-red-400 text-white'}>
-                                {result.parsedResult.polaridad}
+                            <div className="bg-white p-3 rounded-xl border shadow-sm">
+                              <label className="text-[9px] text-muted-foreground block uppercase font-black mb-1">Polaridad</label>
+                              <Badge className={`text-[10px] font-black ${result.parsedResult.polaridad === 'Amor' ? 'bg-accent/20 text-accent hover:bg-accent/30' : 'bg-red-100 text-red-600 hover:bg-red-200'} border-none`}>
+                                {result.parsedResult.polaridad.toUpperCase()}
                               </Badge>
                             </div>
-                            <div className="bg-secondary/30 p-2 rounded">
-                              <label className="text-[10px] text-muted-foreground block uppercase font-bold">Urgencia</label>
-                              <span className="text-sm font-medium">{result.parsedResult.urgencia ? 'Sí' : 'No'}</span>
+                            <div className="bg-white p-3 rounded-xl border shadow-sm">
+                              <label className="text-[9px] text-muted-foreground block uppercase font-black mb-1">Urgencia</label>
+                              <span className={`text-xs font-black ${result.parsedResult.urgencia ? 'text-red-500' : 'text-slate-400'}`}>
+                                {result.parsedResult.urgencia ? 'SÍ (CRÍTICO)' : 'NO'}
+                              </span>
                             </div>
-                            <div className="bg-secondary/30 p-2 rounded">
-                              <label className="text-[10px] text-muted-foreground block uppercase font-bold">Categoría</label>
+                            <div className="bg-white p-3 rounded-xl border shadow-sm">
+                              <label className="text-[9px] text-muted-foreground block uppercase font-black mb-1">Categoría</label>
                               <div className="flex flex-wrap gap-1">
                                 {result.parsedResult.categoria.map((cat, i) => (
-                                  <Badge key={i} variant="outline" className="text-[10px] px-1 py-0">{cat}</Badge>
+                                  <Badge key={i} variant="outline" className="text-[9px] px-2 py-0 font-bold border-primary/20">{cat}</Badge>
                                 ))}
                               </div>
                             </div>
@@ -317,16 +370,19 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                 </TabsContent>
 
                 <TabsContent value="raw">
-                  <Card className="bg-slate-900 border-none">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-white/10">
-                      <CardTitle className="text-white flex items-center gap-2 text-base">
-                        <FileJson size={18} /> JSON Agent Output
+                  <Card className="bg-slate-950 border-none shadow-2xl rounded-2xl overflow-hidden">
+                    <CardHeader className="bg-slate-900/50 flex flex-row items-center justify-between py-4 px-6 border-b border-white/5">
+                      <CardTitle className="text-white flex items-center gap-3 text-sm font-bold">
+                        <FileJson size={18} className="text-accent" /> 
+                        <span className="tracking-widest uppercase">Agent JSON Payload</span>
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="p-4 overflow-x-auto">
-                      <pre className="text-green-400 font-code text-xs leading-relaxed">
-                        {currentResult ? currentResult.rawResponse : '// No response available'}
-                      </pre>
+                    <CardContent className="p-6">
+                      <div className="bg-black/40 p-4 rounded-xl overflow-x-auto max-h-[500px] scrollbar-thin scrollbar-thumb-white/10">
+                        <pre className="text-emerald-400 font-code text-xs leading-relaxed">
+                          {currentResult ? currentResult.rawResponse : '// No hay respuesta para mostrar'}
+                        </pre>
+                      </div>
                     </CardContent>
                   </Card>
                 </TabsContent>
@@ -337,39 +393,44 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
       </div>
 
       {/* History Section */}
-      <Card className="shadow-lg border-t-4 border-primary/20">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <HistoryIcon size={20} className="text-primary" /> Historial de Evaluaciones
+      <Card className="shadow-xl border-none bg-white/60 backdrop-blur-sm overflow-hidden rounded-3xl">
+        <CardHeader className="bg-white/40 border-b">
+          <CardTitle className="flex items-center gap-3 text-xl">
+            <div className="bg-primary/10 p-2 rounded-lg text-primary">
+              <HistoryIcon size={24} />
+            </div>
+            Historial de Evaluaciones
           </CardTitle>
-          <CardDescription>Tus intentos anteriores quedan registrados aquí.</CardDescription>
+          <CardDescription>Registro cronológico de tus experimentos de Prompt Engineering.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-6">
           {history.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl">
-              No hay evaluaciones previas registradas.
+            <div className="text-center py-16 text-muted-foreground bg-muted/10 rounded-3xl border-2 border-dashed">
+              <Target size={48} className="mx-auto mb-4 opacity-10" />
+              <p className="font-medium">No hay evaluaciones previas.</p>
+              <p className="text-xs">Tus intentos aparecerán aquí automáticamente.</p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {history.map((record) => (
-                <div key={record.id} className="flex items-center justify-between p-4 bg-white border rounded-xl hover:border-primary/50 transition-colors group">
-                  <div className="flex items-center gap-4">
-                    <div className={`p-2 rounded-full ${record.score === record.total ? 'bg-accent/10 text-accent' : 'bg-primary/10 text-primary'}`}>
-                      {record.score === record.total ? <CheckCircle2 size={24} /> : <FileText size={24} />}
+                <div key={record.id} className="flex items-center justify-between p-5 bg-white border rounded-2xl hover:border-primary transition-all hover:shadow-lg group cursor-pointer" onClick={() => setCurrentResult(record.results)}>
+                  <div className="flex items-center gap-5">
+                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-lg ${record.score === record.total ? 'bg-accent/20 text-accent' : 'bg-primary/10 text-primary'}`}>
+                      {record.score}/{record.total}
                     </div>
                     <div>
-                      <p className="font-bold text-sm">Puntuación: {record.score} / {record.total}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(record.timestamp).toLocaleString('es-SV')}
+                      <p className="font-black text-sm uppercase tracking-tight">Evaluación Finalizada</p>
+                      <p className="text-[10px] text-muted-foreground font-bold flex items-center gap-1">
+                        <Target size={10} /> {new Date(record.timestamp).toLocaleString('es-SV')}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-6">
                     <div className="hidden md:block text-right">
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase">Prompt Preview</p>
-                      <p className="text-xs truncate max-w-[200px] italic">"{record.systemInstruction.substring(0, 40)}..."</p>
+                      <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-1">Vista Previa Prompt</p>
+                      <p className="text-[11px] truncate max-w-[250px] font-medium text-slate-500">"{record.systemInstruction}"</p>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={() => setCurrentResult(record.results)} className="group-hover:text-primary">
+                    <Button variant="secondary" size="icon" className="rounded-full group-hover:bg-primary group-hover:text-white transition-colors shadow-sm">
                       <ChevronRight size={20} />
                     </Button>
                   </div>
@@ -381,9 +442,10 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
       </Card>
       
       {/* Footer Branding */}
-      <footer className="text-center py-8 opacity-50 space-y-2">
-        <p className="text-sm font-bold">Universidad Evangélica de El Salvador (UEES)</p>
-        <p className="text-[10px] uppercase tracking-widest font-bold">Prompt Engineering Lab • Facultad de Informática</p>
+      <footer className="text-center py-12 space-y-3">
+        <div className="w-16 h-1 bg-primary/20 mx-auto rounded-full mb-6"></div>
+        <p className="text-xs font-black text-primary/40 uppercase tracking-[0.3em]">Universidad Evangélica de El Salvador</p>
+        <p className="text-[9px] uppercase tracking-widest font-bold text-muted-foreground/60">Prompt Engineering Lab • Facultad de Informática</p>
       </footer>
     </div>
   );
