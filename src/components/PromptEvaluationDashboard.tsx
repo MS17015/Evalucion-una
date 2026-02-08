@@ -21,7 +21,8 @@ import {
   FileJson,
   Target,
   RefreshCcw,
-  PlusCircle
+  PlusCircle,
+  Eraser
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
@@ -50,7 +51,6 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load history on mount
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedHistory = localStorage.getItem(`uees_history_${studentName}`);
@@ -73,16 +73,18 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
   };
 
   const startNewAttempt = () => {
+    // Hard reset of all states to ensure no instructions are reused
     setCurrentResult(null);
     setSystemInstruction("");
-    // Reset file if needed, but usually testing same file with different prompt
-    // setFileContent(null);
-    // setFileName(null);
+    setFileContent(null);
+    setFileName(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const runEvaluation = async () => {
     if (!systemInstruction.trim() || !fileContent) return;
     
+    // Clear previous result immediately
     setCurrentResult(null);
     setIsProcessing(true);
 
@@ -165,19 +167,24 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                 </CardTitle>
                 <CardDescription>Define el comportamiento de la IA.</CardDescription>
               </div>
+              {!currentResult && !isProcessing && (
+                <Button variant="ghost" size="icon" onClick={() => setSystemInstruction("")} title="Limpiar instrucción">
+                  <Eraser size={18} />
+                </Button>
+              )}
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
               <Textarea 
-                placeholder="Ingresa la instrucción de sistema aquí..."
+                placeholder="Escribe tu instrucción aquí... El agente seguirá estrictamente tus reglas."
                 className="min-h-[220px] font-code text-sm border-2 focus-visible:ring-primary leading-relaxed"
                 value={systemInstruction}
                 onChange={(e) => setSystemInstruction(e.target.value)}
                 disabled={currentResult !== null || isProcessing}
               />
-              <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                <p className="text-[11px] text-blue-700 leading-tight">
-                  <strong className="block mb-1">Requisito de Extracción:</strong>
-                  Debe generar un JSON con: entidad, polaridad (Amor/Odio), categoría y urgencia.
+              <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
+                <p className="text-[11px] text-amber-700 leading-tight">
+                  <strong className="block mb-1">Nota de Evaluación:</strong>
+                  El agente NO conoce las reglas de extracción por defecto. Tu instrucción debe definir explícitamente qué extraer y cómo clasificarlo.
                 </p>
               </div>
             </CardContent>
@@ -225,7 +232,7 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                   >
                     {isProcessing ? (
                       <span className="flex items-center gap-2">
-                        <RefreshCcw className="animate-spin" size={20} /> Procesando...
+                        <RefreshCcw className="animate-spin" size={20} /> Evaluando...
                       </span>
                     ) : (
                       <>
@@ -237,7 +244,7 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                 ) : (
                   <Button 
                     variant="outline"
-                    className="w-full border-2 border-primary text-primary hover:bg-primary hover:text-white font-black h-14 text-lg shadow-lg animate-bounce"
+                    className="w-full border-2 border-primary text-primary hover:bg-primary hover:text-white font-black h-14 text-lg shadow-lg animate-in zoom-in-90"
                     onClick={startNewAttempt}
                   >
                     <PlusCircle className="mr-2" size={20} />
@@ -267,8 +274,8 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                   <div className="w-24 h-24 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto absolute inset-0"></div>
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-primary animate-pulse">Analizando</h3>
-                  <p className="text-muted-foreground text-sm">El agente de IA está procesando tu instrucción de forma aislada...</p>
+                  <h3 className="text-2xl font-bold text-primary animate-pulse">Llamando al Agente</h3>
+                  <p className="text-muted-foreground text-sm">El modelo está aplicando tu instrucción a los datos en tiempo real...</p>
                 </div>
               </div>
             </Card>
@@ -282,7 +289,7 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                   </div>
                   <div className="flex justify-between items-center mb-6">
                     <div className="space-y-1">
-                      <p className="text-primary-foreground/70 font-bold uppercase tracking-widest text-xs">Resultado del Intento</p>
+                      <p className="text-primary-foreground/70 font-bold uppercase tracking-widest text-xs">Calificación del Prompt</p>
                       <div className="flex items-baseline gap-3">
                         <span className="text-7xl font-black">{score}</span>
                         <span className="text-3xl text-primary-foreground/40 font-bold">/ {totalItems}</span>
@@ -293,13 +300,13 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                         {score === totalItems ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
                         {percentage.toFixed(0)}% Éxito
                       </div>
-                      <p className="text-xs font-medium text-primary-foreground/60 italic">Instrucción completada</p>
+                      <p className="text-xs font-medium text-primary-foreground/60 italic">Respuesta analizada</p>
                     </div>
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
-                      <span>Eficacia del Prompt</span>
-                      <span>{score} correctos de {totalItems}</span>
+                      <span>Precisión de la Extracción</span>
+                      <span>{score} exitosos de {totalItems}</span>
                     </div>
                     <Progress value={percentage} className="h-4 bg-white/10" />
                   </div>
@@ -310,10 +317,10 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
               <Tabs defaultValue="formatted" className="w-full">
                 <TabsList className="grid w-full grid-cols-2 h-14 bg-white/50 backdrop-blur border-2 mb-6 p-1 rounded-xl">
                   <TabsTrigger value="formatted" className="text-sm font-black uppercase tracking-tight data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg transition-all">
-                    Detalle de Casos
+                    Resultados por Caso
                   </TabsTrigger>
                   <TabsTrigger value="raw" className="text-sm font-black uppercase tracking-tight data-[state=active]:bg-primary data-[state=active]:text-white rounded-lg transition-all">
-                    Salida JSON IA
+                    Payload JSON (Raw)
                   </TabsTrigger>
                 </TabsList>
                 
@@ -324,14 +331,14 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                         <div className="flex justify-between items-start gap-4">
                           <div className="space-y-3 flex-1">
                             <div className="flex items-center gap-3">
-                              <Badge variant="secondary" className="px-3 py-1 font-black text-[10px]">CASO {idx + 1}</Badge>
+                              <Badge variant="secondary" className="px-3 py-1 font-black text-[10px]">LÍNEA {idx + 1}</Badge>
                               {result.validationStatus === 'Success' ? (
                                 <Badge className="bg-accent text-accent-foreground font-black border-none gap-1">
-                                  <CheckCircle2 size={12} /> FORMATO VÁLIDO
+                                  <CheckCircle2 size={12} /> CUMPLE SCHEMA
                                 </Badge>
                               ) : (
                                 <Badge variant="destructive" className="font-black gap-1">
-                                  <XCircle size={12} /> ERROR DE ESTRUCTURA
+                                  <XCircle size={12} /> ERROR LÓGICO/FORMATO
                                 </Badge>
                               )}
                             </div>
@@ -343,11 +350,11 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                           </div>
                         </div>
 
-                        {result.parsedResult && (
+                        {result.parsedResult ? (
                           <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3 animate-in fade-in slide-in-from-top-2">
                             <div className="bg-white p-3 rounded-xl border shadow-sm">
                               <label className="text-[9px] text-muted-foreground block uppercase font-black mb-1">Entidad</label>
-                              <span className="text-xs font-bold text-primary">{result.parsedResult.entidad}</span>
+                              <span className="text-xs font-bold text-primary truncate block">{result.parsedResult.entidad || '-'}</span>
                             </div>
                             <div className="bg-white p-3 rounded-xl border shadow-sm">
                               <label className="text-[9px] text-muted-foreground block uppercase font-black mb-1">Polaridad</label>
@@ -364,11 +371,21 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                             <div className="bg-white p-3 rounded-xl border shadow-sm">
                               <label className="text-[9px] text-muted-foreground block uppercase font-black mb-1">Categoría</label>
                               <div className="flex flex-wrap gap-1">
-                                {result.parsedResult.categoria.map((cat, i) => (
-                                  <Badge key={i} variant="outline" className="text-[9px] px-2 py-0 font-bold border-primary/20">{cat}</Badge>
-                                ))}
+                                {result.parsedResult.categoria.length > 0 ? (
+                                  result.parsedResult.categoria.map((cat, i) => (
+                                    <Badge key={i} variant="outline" className="text-[9px] px-2 py-0 font-bold border-primary/20">{cat}</Badge>
+                                  ))
+                                ) : (
+                                  <span className="text-[9px] text-muted-foreground">Ninguna</span>
+                                )}
                               </div>
                             </div>
+                          </div>
+                        ) : (
+                          <div className="mt-4 p-4 bg-destructive/10 rounded-xl border border-destructive/20">
+                            <p className="text-xs text-destructive font-medium flex items-center gap-2">
+                              <AlertTriangle size={14} /> El modelo no pudo extraer datos válidos basándose en tu instrucción.
+                            </p>
                           </div>
                         )}
                       </CardContent>
@@ -381,12 +398,12 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
                     <CardHeader className="bg-slate-900/50 flex flex-row items-center justify-between py-4 px-6 border-b border-white/5">
                       <CardTitle className="text-white flex items-center gap-3 text-sm font-bold">
                         <FileJson size={18} className="text-accent" /> 
-                        <span className="tracking-widest uppercase">Agent JSON Payload</span>
+                        <span className="tracking-widest uppercase">Respuesta del Agente</span>
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-6">
                       <div className="bg-black/40 p-4 rounded-xl overflow-x-auto max-h-[500px] scrollbar-thin scrollbar-thumb-white/10">
-                        <pre className="text-emerald-400 font-code text-xs leading-relaxed">
+                        <pre className="text-emerald-400 font-code text-xs leading-relaxed whitespace-pre-wrap">
                           {currentResult ? currentResult.rawResponse : '// No hay respuesta para mostrar'}
                         </pre>
                       </div>
@@ -408,7 +425,7 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
             </div>
             Historial de Evaluaciones
           </CardTitle>
-          <CardDescription>Registro cronológico de tus experimentos de Prompt Engineering.</CardDescription>
+          <CardDescription>Registro de experimentos realizados.</CardDescription>
         </CardHeader>
         <CardContent className="p-6">
           {history.length === 0 ? (
@@ -455,7 +472,6 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
         </CardContent>
       </Card>
       
-      {/* Footer Branding */}
       <footer className="text-center py-12 space-y-3">
         <div className="w-16 h-1 bg-primary/20 mx-auto rounded-full mb-6"></div>
         <p className="text-xs font-black text-primary/40 uppercase tracking-[0.3em]">Universidad Evangélica de El Salvador</p>

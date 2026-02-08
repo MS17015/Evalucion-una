@@ -1,10 +1,8 @@
 'use server';
 /**
- * @fileOverview This file defines a Genkit flow for extracting and validating customer feedback from text files.
- *
- * extractAndValidateFeedback - An async function that takes a system instruction and text content, extracts feedback, and validates it against a JSON schema.
- * ExtractAndValidateFeedbackInput - The input type for the extractAndValidateFeedback function, including system instruction and text content.
- * ExtractAndValidateFeedbackOutput - The output type for the extractAndValidateFeedback function, including the raw response and validated results.
+ * @fileOverview This file defines a Genkit flow for extracting and validating customer feedback.
+ * The prompt is designed to evaluate a student's system instruction, meaning the logic
+ * must strictly follow what the student provides.
  */
 
 import {ai} from '@/ai/genkit';
@@ -36,7 +34,7 @@ const ExtractAndValidateFeedbackOutputSchema = z.object({
 export type ExtractAndValidateFeedbackOutput = z.infer<typeof ExtractAndValidateFeedbackOutputSchema>;
 
 /**
- * Robust wrapper for the extraction flow that catches potential AI or validation errors.
+ * Robust wrapper for the extraction flow.
  */
 export async function extractAndValidateFeedback(
   input: ExtractAndValidateFeedbackInput
@@ -47,7 +45,7 @@ export async function extractAndValidateFeedback(
     console.error('Extraction flow failed:', error);
     const textLines = input.textContent.split('\n').filter(line => line.trim().length > 0);
     return {
-      rawResponse: `Error en la evaluación: ${error.message || 'Error desconocido del motor de IA'}`,
+      rawResponse: `Error crítico en el modelo: ${error.message || 'Sin respuesta del agente'}`,
       validatedResults: textLines.map(line => ({
         originalText: line,
         parsedResult: null,
@@ -60,8 +58,9 @@ export async function extractAndValidateFeedback(
 const extractFeedbackPrompt = ai.definePrompt({
   name: 'extractFeedbackPrompt',
   input: {schema: ExtractAndValidateFeedbackInputSchema},
-  output: {schema: z.any()}, // Using any to prevent Genkit validation crashes if the model returns null or non-string
+  output: {schema: z.any()},
   config: {
+    temperature: 0.1, // Low temperature to be more literal with student's instructions
     safetySettings: [
       { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
@@ -71,30 +70,30 @@ const extractFeedbackPrompt = ai.definePrompt({
     ],
   },
   prompt: `
-    You are an expert data extraction assistant specialized in customer feedback analysis.
+    You are a simulator that evaluates a Student's Prompt Engineering skills.
     
-    SYSTEM INSTRUCTION:
+    CRITICAL: You must follow the logic and rules provided in the "STUDENT INSTRUCTION" section below.
+    If the Student Instruction is missing rules, logic, or is incorrect, you must NOT "fix" it or use your own knowledge to fill the gaps. Your output must reflect EXACTLY what the student instructed.
+    
+    STUDENT INSTRUCTION (The source of all logic):
+    """
     {{{systemInstruction}}}
+    """
     
-    TASK:
-    Analyze the text content provided below and extract structured information for EACH line of feedback.
-    Return the result as a valid JSON array of objects.
-    
-    JSON STRUCTURE FOR EACH ITEM:
-    {
-      "entidad": string,
-      "polaridad": "Amor" | "Odio",
-      "categoria": ["Atención" | "App" | "Cajeros"],
-      "urgencia": boolean
-    }
-    
-    CONSTRAINTS:
-    - Return ONLY the JSON array. Do not include markdown code blocks or explanations.
-    - Match the number of items in the array to the number of non-empty lines in the input text.
-    - Ensure enums like "Amor"/"Odio" and categories are matched exactly as specified.
-    
-    TEXT CONTENT:
+    DATA TO PROCESS (One example per line):
     {{{textContent}}}
+    
+    OUTPUT FORMAT REQUIREMENTS:
+    - You must ALWAYS return a JSON array of objects.
+    - Each object in the array must match this schema:
+      {
+        "entidad": string,
+        "polaridad": "Amor" | "Odio",
+        "categoria": ["Atención" | "App" | "Cajeros"],
+        "urgencia": boolean
+      }
+    - If the student's instruction did not provide enough info to fill a field, leave it null or as an empty string according to your best literal interpretation of their bad prompt.
+    - Do NOT include markdown blocks or any text other than the JSON array.
   `,
 });
 
@@ -107,9 +106,7 @@ const extractAndValidateFeedbackFlow = ai.defineFlow(
   async input => {
     const {output} = await extractFeedbackPrompt(input);
     
-    // Prepare the raw response for display
     const rawResponse = typeof output === 'string' ? output : JSON.stringify(output, null, 2) || '[]';
-
     const textLines = input.textContent.split('\n').filter(line => line.trim().length > 0);
 
     let jsonResults: any[] = [];
@@ -121,7 +118,6 @@ const extractAndValidateFeedbackFlow = ai.defineFlow(
         jsonResults = [parsed];
       }
     } catch (e) {
-      console.warn('Failed to parse model output as JSON:', e);
       jsonResults = [];
     }
 
@@ -129,15 +125,13 @@ const extractAndValidateFeedbackFlow = ai.defineFlow(
       let parsedResult = null;
       let validationStatus: 'Success' | 'Failure' = 'Failure';
 
-      // Attempt to validate the corresponding result from the AI
       const candidate = jsonResults[index];
       if (candidate) {
         try {
-          // Strict validation against the student's expected schema
+          // Strict validation against what the app expects
           parsedResult = FeedbackSchema.parse(candidate);
           validationStatus = 'Success';
         } catch (e) {
-          // Validation failed for this specific item
           parsedResult = null;
           validationStatus = 'Failure';
         }
