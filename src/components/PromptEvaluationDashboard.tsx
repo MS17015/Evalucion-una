@@ -18,7 +18,8 @@ import {
   ChevronRight,
   ShieldCheck,
   AlertTriangle,
-  FileJson
+  FileJson,
+  Target
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
@@ -125,9 +126,20 @@ export function PromptEvaluationDashboard({ studentName, onLogout }: PromptEvalu
             </p>
           </div>
         </div>
-        <Button variant="outline" onClick={onLogout} className="flex items-center gap-2">
-          <LogOut size={16} /> Salir
-        </Button>
+        
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col items-end mr-4">
+            <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-tighter flex items-center gap-1">
+              <Target size={10} /> Intentos Realizados
+            </span>
+            <span className="text-lg font-bold text-primary leading-none">
+              {history.length}
+            </span>
+          </div>
+          <Button variant="outline" onClick={onLogout} className="flex items-center gap-2 h-11">
+            <LogOut size={16} /> Salir
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
