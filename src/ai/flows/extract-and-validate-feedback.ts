@@ -35,17 +35,67 @@ const ExtractAndValidateFeedbackOutputSchema = z.object({
 });
 export type ExtractAndValidateFeedbackOutput = z.infer<typeof ExtractAndValidateFeedbackOutputSchema>;
 
+/**
+ * Robust wrapper for the extraction flow that catches potential AI or validation errors.
+ */
 export async function extractAndValidateFeedback(
   input: ExtractAndValidateFeedbackInput
 ): Promise<ExtractAndValidateFeedbackOutput> {
-  return extractAndValidateFeedbackFlow(input);
+  try {
+    return await extractAndValidateFeedbackFlow(input);
+  } catch (error: any) {
+    console.error('Extraction flow failed:', error);
+    const textLines = input.textContent.split('\n').filter(line => line.trim().length > 0);
+    return {
+      rawResponse: `Error en la evaluación: ${error.message || 'Error desconocido del motor de IA'}`,
+      validatedResults: textLines.map(line => ({
+        originalText: line,
+        parsedResult: null,
+        validationStatus: 'Failure' as const,
+      })),
+    };
+  }
 }
 
 const extractFeedbackPrompt = ai.definePrompt({
   name: 'extractFeedbackPrompt',
   input: {schema: ExtractAndValidateFeedbackInputSchema},
-  output: {schema: z.string()},
-  prompt: `{{{systemInstruction}}}\n\nExtract the following JSON structure from the text content:\n\n{ \n  "entidad": "Nombre del servicio/persona",\n  "polaridad": (Amor/Odio),\n  "categoria": ["Atención", "App", "Cajeros"],\n  "urgencia": boolean\n}\n\nText Content: {{{textContent}}}`,
+  output: {schema: z.any()}, // Using any to prevent Genkit validation crashes if the model returns null or non-string
+  config: {
+    safetySettings: [
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' },
+    ],
+  },
+  prompt: `
+    You are an expert data extraction assistant specialized in customer feedback analysis.
+    
+    SYSTEM INSTRUCTION:
+    {{{systemInstruction}}}
+    
+    TASK:
+    Analyze the text content provided below and extract structured information for EACH line of feedback.
+    Return the result as a valid JSON array of objects.
+    
+    JSON STRUCTURE FOR EACH ITEM:
+    {
+      "entidad": string,
+      "polaridad": "Amor" | "Odio",
+      "categoria": ["Atención" | "App" | "Cajeros"],
+      "urgencia": boolean
+    }
+    
+    CONSTRAINTS:
+    - Return ONLY the JSON array. Do not include markdown code blocks or explanations.
+    - Match the number of items in the array to the number of non-empty lines in the input text.
+    - Ensure enums like "Amor"/"Odio" and categories are matched exactly as specified.
+    
+    TEXT CONTENT:
+    {{{textContent}}}
+  `,
 });
 
 const extractAndValidateFeedbackFlow = ai.defineFlow(
@@ -55,53 +105,53 @@ const extractAndValidateFeedbackFlow = ai.defineFlow(
     outputSchema: ExtractAndValidateFeedbackOutputSchema,
   },
   async input => {
-    const {output: rawResponse} = await extractFeedbackPrompt(input);
+    const {output} = await extractFeedbackPrompt(input);
+    
+    // Prepare the raw response for display
+    const rawResponse = typeof output === 'string' ? output : JSON.stringify(output, null, 2) || '[]';
 
-    const textLines = input.textContent.split('\n');
+    const textLines = input.textContent.split('\n').filter(line => line.trim().length > 0);
 
     let jsonResults: any[] = [];
     try {
-      jsonResults = JSON.parse(rawResponse!).map((item: any) => {
-        try {
-          return FeedbackSchema.parse(item);
-        } catch (e) {
-          return null;
-        }
-      });
-    } catch (e) {
-      // If the entire response is not valid JSON, attempt to parse each line individually
-      console.warn('Raw response is not valid JSON, attempting to parse line by line.', e);
-      try {
-        jsonResults = textLines.map(line => {
-          try {
-            const parsed = JSON.parse(line);
-            try {
-              return FeedbackSchema.parse(parsed);
-            } catch (e) {
-              return null;
-            }
-          } catch (e) {
-            return null;
-          }
-        });
-      } catch (e) {
-        console.error('Failed to parse individual lines.', e);
-        jsonResults = textLines.map(() => null);
+      const parsed = typeof output === 'string' ? JSON.parse(output) : output;
+      if (Array.isArray(parsed)) {
+        jsonResults = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        jsonResults = [parsed];
       }
+    } catch (e) {
+      console.warn('Failed to parse model output as JSON:', e);
+      jsonResults = [];
     }
 
     const validatedResults = textLines.map((line, index) => {
-      const parsedResult = jsonResults[index] || null;
-      const validationStatus = parsedResult ? 'Success' : 'Failure';
+      let parsedResult = null;
+      let validationStatus: 'Success' | 'Failure' = 'Failure';
+
+      // Attempt to validate the corresponding result from the AI
+      const candidate = jsonResults[index];
+      if (candidate) {
+        try {
+          // Strict validation against the student's expected schema
+          parsedResult = FeedbackSchema.parse(candidate);
+          validationStatus = 'Success';
+        } catch (e) {
+          // Validation failed for this specific item
+          parsedResult = null;
+          validationStatus = 'Failure';
+        }
+      }
+
       return {
         originalText: line,
         parsedResult,
-        validationStatus: validationStatus as 'Success' | 'Failure',
+        validationStatus,
       };
     });
 
     return {
-      rawResponse: rawResponse!,
+      rawResponse,
       validatedResults,
     };
   }
